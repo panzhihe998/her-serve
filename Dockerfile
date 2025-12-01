@@ -1,21 +1,20 @@
-FROM python:3.10-slim
+# 使用官方 Python 运行时作为基础镜像
+FROM python:3.11-slim
 
-# 工作目录
+# 设置工作目录
 WORKDIR /app
 
-# 一些 python 小优化
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# 先复制依赖并安装（利用缓存）
+# 预先复制依赖文件并安装依赖
 COPY requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 再复制剩下代码
+# 复制项目全部代码
 COPY . .
 
-# 暴露端口
-EXPOSE 8000
+# 让 Cloud Run 知道容器会监听哪个端口（一般写 8080）
+ENV PORT=8080
 
-# 启动命令
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# 启动 FastAPI 应用
+# 关键：这里一定要用 8080，跟上面的 PORT 环境保持一致
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
