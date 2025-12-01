@@ -1,0 +1,42 @@
+steps:
+  # Step 1: 安装依赖
+  - name: python:3.11
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install --no-cache-dir -r requirements.txt
+        pip install pytest
+
+  # Step 2: 运行测试
+  - name: python:3.11
+    entrypoint: bash
+    args: ["pytest", "--maxfail=1", "--disable-warnings", "-q"]
+
+  # Step 3: 构建容器镜像
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - us-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/her-serve:$COMMIT_SHA
+      - .
+
+  # Step 4: 推送镜像
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - us-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/her-serve:$COMMIT_SHA
+
+  # Step 5: 部署到 Cloud Run
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args:
+      - gcloud
+      - run
+      - deploy
+      - her-serve
+      - --image=us-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/her-serve:$COMMIT_SHA
+      - --region=us-west1
+      - --quiet
+
+images:
+  - us-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/her-serve:$COMMIT_SHA
