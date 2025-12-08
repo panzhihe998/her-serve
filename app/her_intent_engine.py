@@ -11,6 +11,10 @@ from openai import OpenAI
 from app import config
 from app.her_self_model import her_self_model
 
+# 修复：确保在 config 未导入 LLM_MODEL_NAME 时使用默认值
+if not hasattr(config, 'LLM_MODEL_NAME'):
+    config.LLM_MODEL_NAME = "gpt-4o"
+
 client = OpenAI(api_key=config.OPENAI_API_KEY)
 
 @dataclass
@@ -22,7 +26,7 @@ class HerIntent:
 
 class HerIntentEngine:
     def __init__(self):
-        self.model = "gpt-4o" # 或 config.LLM_MODEL_NAME
+        self.model = config.LLM_MODEL_NAME
 
     def think(self, user_text: str, context_summary: str = "") -> HerIntent:
         """
@@ -42,14 +46,16 @@ class HerIntentEngine:
             f"Core Values: {json.dumps(state.core_values)}\n"
             f"--- GOAL ---\n"
             f"Analyze the user input. Check against your Core Values (Safety first!). "
-            f"Decide your intent. Do not generate the final reply yet, just the PLAN."
+            f"Decide your intent.\n"
+            f"**Crucial Rule: The 'action' key must be ONE simple string from: 'Reply', 'Refuse', 'Ignore', 'SelfHeal'.**"
         )
 
         # 3. 构建 User Prompt
         user_prompt = (
             f"Context: {context_summary}\n"
             f"User Input: \"{user_text}\"\n\n"
-            f"Return a JSON object with keys: 'thought_process', 'action', 'directive', 'emotion_update'."
+            f"Return a JSON object with keys: 'thought_process', 'action', 'directive', 'emotion_update'.\n"
+            f"Example JSON: {{ "thought_process": "Analyzing input...", "action": "Reply", "directive": "Be polite and open", "emotion_update": "Happy" }}"
         )
 
         try:
@@ -68,21 +74,25 @@ class HerIntentEngine:
             data = json.loads(content)
             
             # 5. 更新内部独白 (写入 Self Model)
-            # 注意：这里只是内存更新，真正保存可能由主循环触发
             if "thought_process" in data:
                 state.recent_internal_monologue.append(data["thought_process"])
-                # 保持独白列表短小
                 if len(state.recent_internal_monologue) > 5:
                     state.recent_internal_monologue.pop(0)
 
             return HerIntent(
                 thought_process=data.get("thought_process", "Thinking..."),
-                action=data.get("action", "Reply"),
+                # 确保 action 字段被清理为简单字符串
+                action=data.get("action", "Reply").split()[0].replace(':', '').strip(),
                 directive=data.get("directive", "Answer normally"),
                 emotion_update=data.get("emotion_update", state.current_mood)
             )
 
         except Exception as e:
+            # 记录错误
+            try: from app.self_heal import self_healer
+            except: self_healer = type('Dummy', (object,), {'record_error': lambda self, *args: None})()
+            self_healer.record_error(f"Intent Engine failure: {e}")
+            
             print(f"[IntentEngine Error] {e}")
             # 降级模式
             return HerIntent(
